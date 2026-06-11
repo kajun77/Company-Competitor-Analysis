@@ -1,0 +1,6 @@
+{
+  "name": "자사·경쟁사 비주얼 분석기",
+  "description": "자사와 경쟁사의 디자인, 랜딩 페이지, 상품 패키지 등을 업로드하여 나란히 비교하고, 인터랙티브 오버레이 슬라이더, 핀 어노테이션, 그리고 실시간 AI SWOT 리포트를 통해 비교 분석하는 도구입니다.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
