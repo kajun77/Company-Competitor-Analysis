@@ -36,8 +36,17 @@ import {
   FileCheck,
   Maximize2,
   Copy,
-  Info
+  Info,
+  Globe
 } from "lucide-react";
+
+const COLOR_MAPPING = {
+  indigo: { border: "border-indigo-600", bg: "bg-indigo-600", text: "text-indigo-600", fill: "bg-indigo-50/75" },
+  emerald: { border: "border-emerald-600", bg: "bg-emerald-600", text: "text-emerald-600", fill: "bg-emerald-50/75" },
+  rose: { border: "border-rose-600", bg: "bg-rose-600", text: "text-rose-600", fill: "bg-rose-50/75" },
+  amber: { border: "border-amber-600", bg: "bg-amber-600", text: "text-amber-600", fill: "bg-amber-50/75" },
+  violet: { border: "border-violet-600", bg: "bg-violet-600", text: "text-violet-600", fill: "bg-violet-50/75" },
+};
 
 export default function App() {
   // --- STATE ---
@@ -46,6 +55,8 @@ export default function App() {
   const [customCategory, setCustomCategory] = useState<string>("");
   const [ourImage, setOurImage] = useState<string>("");
   const [competitorImage, setCompetitorImage] = useState<string>("");
+  const [ourUrl, setOurUrl] = useState<string>("");
+  const [competitorUrl, setCompetitorUrl] = useState<string>("");
 
   // Tracking human uploads vs preset
   const [isOurCustom, setIsOurCustom] = useState<boolean>(false);
@@ -56,12 +67,21 @@ export default function App() {
   const [competitorNotes, setCompetitorNotes] = useState<string>("");
   const [customPrompt, setCustomPrompt] = useState<string>("");
 
-  // PIN annotatons
-  const [ourPins, setOurPins] = useState<Array<{ id: number; x: number; y: number; text: string }>>([]);
-  const [competitorPins, setCompetitorPins] = useState<Array<{ id: number; x: number; y: number; text: string }>>([]);
+  // PIN annotations and shapes
+  const [ourPins, setOurPins] = useState<Array<{ id: number; x: number; y: number; text: string; type?: "pin" | "rect" | "circle"; size?: number; color?: "indigo" | "emerald" | "rose" | "amber" | "violet" }>>([]);
+  const [competitorPins, setCompetitorPins] = useState<Array<{ id: number; x: number; y: number; text: string; type?: "pin" | "rect" | "circle"; size?: number; color?: "indigo" | "emerald" | "rose" | "amber" | "violet" }>>([]);
   const [pinMode, setPinMode] = useState<"none" | "our" | "competitor">("none");
   const [activePinText, setActivePinText] = useState<string>("");
   const [pendingPinCoords, setPendingPinCoords] = useState<{ x: number; y: number } | null>(null);
+  
+  // New shape settings
+  const [pendingPinType, setPendingPinType] = useState<"pin" | "rect" | "circle">("pin");
+  const [pendingPinSize, setPendingPinSize] = useState<number>(15);
+  const [pendingPinColor, setPendingPinColor] = useState<"indigo" | "emerald" | "rose" | "amber" | "violet">("indigo");
+
+  // Drag-and-drop drag over states
+  const [ourDragging, setOurDragging] = useState<boolean>(false);
+  const [competitorDragging, setCompetitorDragging] = useState<boolean>(false);
 
   // Display Mode / UI preferences
   const [compareMode, setCompareMode] = useState<"side-by-side" | "slider">("side-by-side");
@@ -120,6 +140,15 @@ export default function App() {
           { id: 1, x: 25, y: 35, text: "핵심 결제 요약 카드 배치 (시선의 안식처)" },
           { id: 2, x: 50, y: 88, text: "단 하나의 명확한 최우선 CTA 버튼" }
         ]);
+        if (activePresetId === "ecommerce-checkout") {
+          setOurUrl("https://brand.coupang.com");
+        } else if (activePresetId === "beverage-packaging") {
+          setOurUrl("https://www.nespresso.com");
+        } else if (activePresetId === "saas-dashboard") {
+          setOurUrl("https://www.notion.so");
+        } else {
+          setOurUrl("");
+        }
       }
       if (!isCompetitorCustom) {
         setCompetitorImage(svgToBase64(preset.competitorSvg));
@@ -128,6 +157,15 @@ export default function App() {
           { id: 1, x: 50, y: 15, text: "사용자 시선을 분산시키는 고자극 할인 배너 팝업" },
           { id: 2, x: 60, y: 90, text: "경쟁 관계의 붉은 버튼과 파란 버튼 복수 배치" }
         ]);
+        if (activePresetId === "ecommerce-checkout") {
+          setCompetitorUrl("https://gmarket.co.kr");
+        } else if (activePresetId === "beverage-packaging") {
+          setCompetitorUrl("https://www.illy.com");
+        } else if (activePresetId === "saas-dashboard") {
+          setCompetitorUrl("https://asana.com");
+        } else {
+          setCompetitorUrl("");
+        }
       }
       setCategory(preset.category);
       
@@ -213,7 +251,49 @@ export default function App() {
     triggerToast("프리셋 기본 상태로 복원되었습니다.");
   };
 
-  // --- PIN MANAGEMENT INTERACTIONS ---
+  // --- DRAG AND DROP HANDLERS ---
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+  };
+
+  const handleDragEnter = (side: "our" | "competitor") => {
+    if (side === "our") setOurDragging(true);
+    else setCompetitorDragging(true);
+  };
+
+  const handleDragLeave = (side: "our" | "competitor") => {
+    if (side === "our") setOurDragging(false);
+    else setCompetitorDragging(false);
+  };
+
+  const handleDrop = (e: React.DragEvent, side: "our" | "competitor") => {
+    e.preventDefault();
+    if (side === "our") setOurDragging(false);
+    else setCompetitorDragging(false);
+
+    const file = e.dataTransfer.files?.[0];
+    if (file && file.type.startsWith("image/")) {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        if (event.target?.result) {
+          if (side === "our") {
+            setOurImage(event.target.result as string);
+            setIsOurCustom(true);
+            setOurPins([]); // reset annotations
+            triggerToast("자사 이미지가 드롭 업로드 되었습니다.");
+          } else {
+            setCompetitorImage(event.target.result as string);
+            setIsCompetitorCustom(true);
+            setCompetitorPins([]); // reset annotations
+            triggerToast("경쟁사 이미지가 드롭 업로드 되었습니다.");
+          }
+        }
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  // --- PIN & SHAPE MANAGEMENT INTERACTIONS ---
   const handleImageClick = (e: React.MouseEvent<HTMLDivElement>, side: "our" | "competitor") => {
     if (pinMode !== side) return;
 
@@ -223,17 +303,25 @@ export default function App() {
 
     setPendingPinCoords({ x, y });
     setActivePinText("");
+    // Give default shape options when launching
+    setPendingPinType("pin");
+    setPendingPinSize(15);
+    setPendingPinColor(side === "our" ? "indigo" : "rose");
   };
 
   const savePendingPin = () => {
     if (!pendingPinCoords || !pinMode) return;
 
-    const textToSave = activePinText.trim() || `특이 사항 영역 (#${(pinMode === "our" ? ourPins : competitorPins).length + 1})`;
+    const typeDesc = pendingPinType === "pin" ? "핀" : pendingPinType === "rect" ? "사각형" : "원";
+    const textToSave = activePinText.trim() || `${typeDesc} 영역 (#${(pinMode === "our" ? ourPins : competitorPins).length + 1})`;
     const newPin = {
       id: Date.now(),
       x: pendingPinCoords.x,
       y: pendingPinCoords.y,
-      text: textToSave
+      text: textToSave,
+      type: pendingPinType,
+      size: pendingPinType === "pin" ? undefined : pendingPinSize,
+      color: pendingPinColor
     };
 
     if (pinMode === "our") {
@@ -244,7 +332,7 @@ export default function App() {
 
     setPendingPinCoords(null);
     setPinMode("none");
-    triggerToast("비주얼 핀 어노테이션이 생성되었습니다.");
+    triggerToast(`비주얼 ${typeDesc} 어노테이션이 생성되었습니다.`);
   };
 
   const deletePin = (id: number, side: "our" | "competitor") => {
@@ -253,7 +341,7 @@ export default function App() {
     } else {
       setCompetitorPins(competitorPins.filter(p => p.id !== id));
     }
-    triggerToast("핀이 제거되었습니다.");
+    triggerToast("어노테이션이 제거되었습니다.");
   };
 
   // --- TRIGGER ACTION: API ANALYZE ---
@@ -263,6 +351,14 @@ export default function App() {
 
     const targetCategory = category === "기타 (직접 작성)" ? customCategory : category;
 
+    // Build descriptions of user-drawn shapes to guide Gemini
+    const ourAnnotationsPrompt = ourPins.length > 0 
+      ? ` [자사 어노테이션 정보]: ` + ourPins.map((p, idx) => `#${idx+1}(위치:${p.x}%,${p.y}%, 모양:${p.type || "pin"}, 크기:${p.size || "기본"}, 메모:${p.text})`).join(", ")
+      : "";
+    const competitorAnnotationsPrompt = competitorPins.length > 0 
+      ? ` [경쟁사 어노테이션 정보]: ` + competitorPins.map((p, idx) => `#${idx+1}(위치:${p.x}%,${p.y}%, 모양:${p.type || "pin"}, 크기:${p.size || "기본"}, 메모:${p.text})`).join(", ")
+      : "";
+
     try {
       const response = await fetch("/api/analyze", {
         method: "POST",
@@ -270,9 +366,11 @@ export default function App() {
         body: JSON.stringify({
           ourImage,
           competitorImage,
+          ourUrl,
+          competitorUrl,
           category: targetCategory,
-          ourNotes: `${ourNotes}${ourPins.length > 0 ? ` [등록된 핀 정보]: ${ourPins.map(p => p.text).join(", ")}` : ""}`,
-          competitorNotes: `${competitorNotes}${competitorPins.length > 0 ? ` [등록된 핀 정보]: ${competitorPins.map(p => p.text).join(", ")}` : ""}`,
+          ourNotes: `${ourNotes}${ourAnnotationsPrompt}`,
+          competitorNotes: `${competitorNotes}${competitorAnnotationsPrompt}`,
           customPrompt
         })
       });
@@ -465,13 +563,40 @@ export default function App() {
                 </div>
               </div>
 
+              {/* Homepage Link URL */}
+              <div className="mb-4">
+                <label className="block text-[10px] font-extrabold text-indigo-600 uppercase tracking-widest mb-1.5 flex items-center gap-1.5">
+                  <Globe className="w-3.5 h-3.5 text-indigo-500 animate-pulse" />
+                  <span>자사 홈페이지 주소 (자동 텍스트 분석 및 크롤링)</span>
+                </label>
+                <div className="relative">
+                  <input
+                    type="url"
+                    value={ourUrl}
+                    onChange={(e) => {
+                      setOurUrl(e.target.value);
+                      if (e.target.value && !isOurCustom) {
+                        setIsOurCustom(true);
+                      }
+                    }}
+                    placeholder="예: https://www.oursite.com (실시간 텍스트 크롤링 대상)"
+                    className="w-full bg-slate-50 text-xs px-3 py-2 pl-8 border border-slate-200 rounded-lg focus:outline-hidden focus:ring-1 focus:ring-indigo-500 placeholder-slate-400 font-mono text-indigo-600 transition-all animate-fade-in"
+                  />
+                  <Globe className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+                </div>
+              </div>
+
               {/* Image viewport */}
               <div 
                 id="our-image-container"
                 onClick={(e) => handleImageClick(e, "our")}
-                className={`relative h-[480px] bg-slate-900 rounded-xl overflow-hidden border border-slate-200 flex items-center justify-center group ${
+                onDragOver={handleDragOver}
+                onDragEnter={() => handleDragEnter("our")}
+                onDragLeave={() => handleDragLeave("our")}
+                onDrop={(e) => handleDrop(e, "our")}
+                className={`relative h-[480px] bg-slate-900 rounded-xl overflow-hidden border transition-all duration-200 flex items-center justify-center group ${
                   pinMode === "our" ? "cursor-crosshair ring-2 ring-indigo-500" : ""
-                }`}
+                } ${ourDragging ? "ring-4 ring-dashed ring-indigo-500 bg-slate-800 scale-[1.01]" : "border-slate-200"}`}
               >
                 {ourImage ? (
                   <>
@@ -481,32 +606,61 @@ export default function App() {
                       className="w-full h-full object-contain pointer-events-none selective-img" 
                     />
                     
-                    {/* Floating Pins Layer */}
-                    {ourPins.map((pin, i) => (
-                      <div
-                        key={pin.id}
-                        id={`our-pin-${pin.id}`}
-                        style={{ left: `${pin.x}%`, top: `${pin.y}%` }}
-                        onClick={(e) => {
-                          e.stopPropagation(); // don't trigger parent click
-                        }}
-                        className="absolute -translate-x-1/2 -translate-y-1/2 z-10 group/pin"
-                      >
-                        <div className="w-7 h-7 bg-indigo-600 text-white rounded-full border-2 border-white shadow-lg flex items-center justify-center font-black text-xs cursor-pointer hover:scale-110 active:scale-95 transition-all">
-                          {i + 1}
+                    {/* Floating Pins & Shapes Layer */}
+                    {ourPins.map((pin, i) => {
+                      const shapeType = pin.type || "pin";
+                      const sizeVal = pin.size || 15;
+                      const clrKey = pin.color || "indigo";
+                      const colorSet = COLOR_MAPPING[clrKey] || COLOR_MAPPING.indigo;
+
+                      return (
+                        <div
+                          key={pin.id}
+                          id={`our-pin-${pin.id}`}
+                          style={{ left: `${pin.x}%`, top: `${pin.y}%` }}
+                          onClick={(e) => {
+                            e.stopPropagation(); // don't trigger parent click
+                          }}
+                          className="absolute -translate-x-1/2 -translate-y-1/2 z-10 group/pin"
+                        >
+                          {shapeType === "pin" ? (
+                            <div className={`w-7 h-7 ${colorSet.bg} text-white rounded-full border-2 border-white shadow-lg flex items-center justify-center font-black text-xs cursor-pointer hover:scale-110 active:scale-95 transition-all`}>
+                              {i + 1}
+                            </div>
+                          ) : shapeType === "rect" ? (
+                            <div 
+                              style={{ width: `${sizeVal * 3}px`, height: `${sizeVal * 2}px` }}
+                              className={`-translate-x-1/2 -translate-y-1/2 border-2 border-dashed ${colorSet.border} ${colorSet.fill} rounded-lg flex items-center justify-center cursor-pointer transition-all hover:brightness-110`}
+                            >
+                              <span className={`px-1.5 py-0.5 rounded bg-white text-[10px] font-black border ${colorSet.border} ${colorSet.text} shadow-xs`}>
+                                {i + 1}
+                              </span>
+                            </div>
+                          ) : (
+                            <div 
+                              style={{ width: `${sizeVal * 2.5}px`, height: `${sizeVal * 2.5}px` }}
+                              className={`-translate-x-1/2 -translate-y-1/2 border-2 border-dashed ${colorSet.border} ${colorSet.fill} rounded-full flex items-center justify-center cursor-pointer transition-all hover:brightness-110`}
+                            >
+                              <span className={`px-1.5 py-0.5 rounded bg-white text-[10px] font-black border ${colorSet.border} ${colorSet.text} shadow-xs`}>
+                                {i + 1}
+                              </span>
+                            </div>
+                          )}
+
+                          {/* Pin Tooltip text on hover */}
+                          <div className="absolute top-8 left-1/2 -translate-x-1/2 w-48 bg-slate-900/95 backdrop-blur text-white text-[10px] p-2 rounded-lg shadow-xl opacity-0 hover:opacity-100 group-hover/pin:opacity-100 transition duration-200 pointer-events-none z-20 border border-slate-700">
+                            <p className={`font-bold ${colorSet.text} mb-0.5`}>포인트 #{i + 1} ({shapeType === "pin" ? "핀" : shapeType === "rect" ? "사각형" : "원"})</p>
+                            {pin.text}
+                          </div>
                         </div>
-                        {/* Pin Tooltip text on hover */}
-                        <div className="absolute top-8 left-1/2 -translate-x-1/2 w-48 bg-slate-900/95 backdrop-blur text-white text-[10px] p-2 rounded-lg shadow-xl opacity-0 hover:opacity-100 group-hover/pin:opacity-100 transition duration-200 pointer-events-none z-20 border border-slate-700">
-                          <p className="font-bold text-indigo-400 mb-0.5">포인트 #{i + 1}</p>
-                          {pin.text}
-                        </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </>
                 ) : (
                   <div className="text-center p-6 text-slate-400">
                     <ImageIcon className="w-12 h-12 stroke-1 mx-auto mb-2 text-slate-500" />
                     <p className="text-xs">자사 이미지가 등록되지 않았습니다.</p>
+                    <p className="text-[10px] text-slate-500 mt-1">파일을 이 영역에 드래그 앤 드롭해서 업로드 하세요.</p>
                   </div>
                 )}
 
@@ -515,7 +669,7 @@ export default function App() {
                   <div className="absolute inset-0 bg-indigo-900/20 pointer-events-none flex items-start justify-center pt-4">
                     <span className="bg-indigo-600 text-white px-3 py-1.5 rounded-full text-[10px] font-bold shadow-lg animate-pulse flex items-center gap-1">
                       <MapPin className="w-3 h-3" />
-                      비주얼을 클릭하여 핀 코멘트를 놓으세요
+                      비주얼을 클릭하여 핀/도형 영역을 마킹하세요
                     </span>
                   </div>
                 )}
@@ -534,9 +688,9 @@ export default function App() {
                     }`}
                   >
                     <Plus className="w-3.5 h-3.5" />
-                    <span>{pinMode === "our" ? "선택 중..." : "새 핀 어노테이션 추가"}</span>
+                    <span>{pinMode === "our" ? "선택 중..." : "새 도형 및 주석 추가"}</span>
                   </button>
-                  <span className="text-[10px] text-slate-500 hidden sm:inline">비주얼의 특정 요소를 찝어 분석 메모를 달 수 있습니다.</span>
+                  <span className="text-[10px] text-slate-500 hidden sm:inline">특정 부분을 마킹하고 텍스트 코멘트를 달아 분석에 연동합니다.</span>
                 </div>
                 
                 {/* Upload Custom Image button */}
@@ -559,18 +713,81 @@ export default function App() {
 
               {/* Pending pin dialog inside layout */}
               {pendingPinCoords && pinMode === "our" && (
-                <div className="mt-4 p-4 bg-indigo-50 border border-indigo-200 rounded-xl space-y-3">
+                <div className="mt-4 p-4 bg-indigo-50 border border-indigo-200 rounded-xl space-y-4">
                   <div className="flex items-center gap-1 text-indigo-800">
                     <MapPin className="w-4 h-4" />
-                    <span className="text-xs font-extrabold">좌표 ({pendingPinCoords.x}%, {pendingPinCoords.y}%) 에 핀 생성</span>
+                    <span className="text-xs font-extrabold">좌표 ({pendingPinCoords.x}%, {pendingPinCoords.y}%) 에 어노테이션 마킹</span>
                   </div>
-                  <textarea
-                    rows={2}
-                    value={activePinText}
-                    onChange={(e) => setActivePinText(e.target.value)}
-                    placeholder="예: '레이아웃 여백이 넓어 눈이 한결 편안함' 또는 '동작 버튼 크기가 큼'"
-                    className="w-full bg-white text-xs p-2.5 border border-indigo-200 rounded-lg focus:outline-hidden focus:ring-1 focus:ring-indigo-500"
-                  />
+
+                  {/* Config options */}
+                  <div className="grid grid-cols-2 gap-3 pb-2 border-b border-indigo-100">
+                    {/* Shape Selector */}
+                    <div>
+                      <label className="block text-[10px] font-black text-slate-500 mb-1">어노테이션 형태 선택</label>
+                      <div className="grid grid-cols-3 gap-1 bg-slate-200/60 p-0.5 rounded-lg">
+                        {(["pin", "rect", "circle"] as const).map((t) => (
+                          <button
+                            key={t}
+                            onClick={() => setPendingPinType(t)}
+                            className={`py-1 rounded text-[10px] font-bold transition ${
+                              pendingPinType === t ? "bg-white text-indigo-700 shadow-xs" : "text-slate-600 hover:text-slate-800"
+                            }`}
+                          >
+                            {t === "pin" ? "핀" : t === "rect" ? "사각형" : "원"}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Color Selector */}
+                    <div>
+                      <label className="block text-[10px] font-black text-slate-500 mb-1">마킹 테두리 색상</label>
+                      <div className="flex gap-1.5 items-center h-7">
+                        {(["indigo", "emerald", "rose", "amber", "violet"] as const).map((c) => {
+                          const cl = COLOR_MAPPING[c];
+                          return (
+                            <button
+                              key={c}
+                              onClick={() => setPendingPinColor(c)}
+                              className={`w-4 h-4 rounded-full ${cl.bg} transition-all ${
+                                pendingPinColor === c ? "ring-2 ring-offset-2 ring-indigo-600 scale-110" : "opacity-80"
+                              }`}
+                            />
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Size slide for shapes */}
+                  {pendingPinType !== "pin" && (
+                    <div className="space-y-1">
+                      <div className="flex justify-between items-center text-[10px] font-black text-slate-500">
+                        <span>도형 상대 크기 조절 (Percentage Size)</span>
+                        <span>{pendingPinSize}px</span>
+                      </div>
+                      <input 
+                        type="range" 
+                        min="5" 
+                        max="40" 
+                        value={pendingPinSize} 
+                        onChange={(e) => setPendingPinSize(Number(e.target.value))}
+                        className="w-full accent-indigo-600 h-1.5 bg-slate-200 rounded-lg cursor-pointer"
+                      />
+                    </div>
+                  )}
+
+                  <div className="space-y-1">
+                    <label className="block text-[10px] font-black text-slate-500">주석 핵심 설명글 (Text Comment)</label>
+                    <textarea
+                      rows={2}
+                      value={activePinText}
+                      onChange={(e) => setActivePinText(e.target.value)}
+                      placeholder="예: '레이아웃 여백이 넓어 눈이 한결 편안함' 또는 '동작 버튼 크기가 큼'"
+                      className="w-full bg-white text-xs p-2.5 border border-indigo-200 rounded-lg focus:outline-hidden focus:ring-1 focus:ring-indigo-500"
+                    />
+                  </div>
+
                   <div className="flex justify-end gap-2">
                     <button 
                       onClick={() => setPendingPinCoords(null)}
@@ -582,7 +799,7 @@ export default function App() {
                       onClick={savePendingPin}
                       className="px-3.5 py-1.5 bg-indigo-600 text-white rounded-md text-[10px] font-bold shadow-md shadow-indigo-100"
                     >
-                      확인 후 핀 꽂기
+                      확인 후 마킹 저장
                     </button>
                   </div>
                 </div>
@@ -593,23 +810,33 @@ export default function App() {
                 <div className="mt-4 space-y-2">
                   <p className="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest">내가 지정한 핵심 비주얼 분석 포인트 ({ourPins.length})</p>
                   <div className="grid grid-cols-1 gap-2 max-h-36 overflow-y-auto pr-1">
-                    {ourPins.map((pin, idx) => (
-                      <div key={pin.id} className="flex items-start justify-between bg-slate-50 border border-slate-100 p-2 rounded-lg text-[11px] gap-2">
-                        <div className="flex gap-2">
-                          <span className="w-5 h-5 shrink-0 bg-indigo-100 text-indigo-700 rounded-md flex items-center justify-center font-bold">
-                            {idx + 1}
-                          </span>
-                          <span className="text-slate-600 leading-relaxed font-medium">{pin.text}</span>
+                    {ourPins.map((pin, idx) => {
+                      const mapping = COLOR_MAPPING[pin.color || "indigo"] || COLOR_MAPPING.indigo;
+                      return (
+                        <div key={pin.id} className="flex items-start justify-between bg-slate-50 border border-slate-100 p-2 rounded-lg text-[11px] gap-2">
+                          <div className="flex gap-2">
+                            <span className={`w-5 h-5 shrink-0 text-white rounded-md flex items-center justify-center font-bold ${mapping.bg} text-[10px]`}>
+                              {idx + 1}
+                            </span>
+                            <div>
+                              <span className="text-slate-600 leading-relaxed font-semibold">
+                                {pin.text} 
+                              </span>
+                              <span className="text-[9px] bg-slate-200 border text-slate-600 font-bold px-1 py-0 rounded ml-1 uppercase">
+                                {pin.type || "pin"}
+                              </span>
+                            </div>
+                          </div>
+                          <button 
+                            onClick={() => deletePin(pin.id, "our")}
+                            className="text-slate-400 hover:text-rose-500 transition-colors p-1 shrink-0"
+                            title="핀 삭제"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
                         </div>
-                        <button 
-                          onClick={() => deletePin(pin.id, "our")}
-                          className="text-slate-400 hover:text-rose-500 transition-colors p-1"
-                          title="핀 삭제"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
               )}
@@ -764,13 +991,40 @@ export default function App() {
                 </div>
               </div>
 
+              {/* Homepage Link URL */}
+              <div className="mb-4">
+                <label className="block text-[10px] font-extrabold text-rose-600 uppercase tracking-widest mb-1.5 flex items-center gap-1.5">
+                  <Globe className="w-3.5 h-3.5 text-rose-500 animate-pulse" />
+                  <span>경쟁사 홈페이지 주소 (자동 텍스트 분석 및 크롤링)</span>
+                </label>
+                <div className="relative">
+                  <input
+                    type="url"
+                    value={competitorUrl}
+                    onChange={(e) => {
+                      setCompetitorUrl(e.target.value);
+                      if (e.target.value && !isCompetitorCustom) {
+                        setIsCompetitorCustom(true);
+                      }
+                    }}
+                    placeholder="예: https://gmarket.co.kr (실시간 텍스트 크롤링 대상)"
+                    className="w-full bg-slate-50 text-xs px-3 py-2 pl-8 border border-slate-200 rounded-lg focus:outline-hidden focus:ring-1 focus:ring-rose-500 placeholder-slate-400 font-mono text-rose-600 transition-all animate-fade-in"
+                  />
+                  <Globe className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+                </div>
+              </div>
+
               {/* Image viewport */}
               <div 
                 id="competitor-image-container"
                 onClick={(e) => handleImageClick(e, "competitor")}
-                className={`relative h-[480px] bg-slate-900 rounded-xl overflow-hidden border border-slate-200 flex items-center justify-center group ${
+                onDragOver={handleDragOver}
+                onDragEnter={() => handleDragEnter("competitor")}
+                onDragLeave={() => handleDragLeave("competitor")}
+                onDrop={(e) => handleDrop(e, "competitor")}
+                className={`relative h-[480px] bg-slate-900 rounded-xl overflow-hidden border transition-all duration-200 flex items-center justify-center group ${
                   pinMode === "competitor" ? "cursor-crosshair ring-2 ring-indigo-500" : ""
-                }`}
+                } ${competitorDragging ? "ring-4 ring-dashed ring-rose-500 bg-slate-800 scale-[1.01]" : "border-slate-200"}`}
               >
                 {competitorImage ? (
                   <>
@@ -780,32 +1034,61 @@ export default function App() {
                       className="w-full h-full object-contain pointer-events-none selective-img" 
                     />
                     
-                    {/* Floating Pins Layer */}
-                    {competitorPins.map((pin, i) => (
-                      <div
-                        key={pin.id}
-                        id={`competitor-pin-${pin.id}`}
-                        style={{ left: `${pin.x}%`, top: `${pin.y}%` }}
-                        onClick={(e) => {
-                          e.stopPropagation(); // don't trigger parent click
-                        }}
-                        className="absolute -translate-x-1/2 -translate-y-1/2 z-10 group/pin"
-                      >
-                        <div className="w-7 h-7 bg-rose-600 text-white rounded-full border-2 border-white shadow-lg flex items-center justify-center font-black text-xs cursor-pointer hover:scale-110 active:scale-95 transition-all">
-                          {i + 1}
+                    {/* Floating Pins & Shapes Layer */}
+                    {competitorPins.map((pin, i) => {
+                      const shapeType = pin.type || "pin";
+                      const sizeVal = pin.size || 15;
+                      const clrKey = pin.color || "rose";
+                      const colorSet = COLOR_MAPPING[clrKey] || COLOR_MAPPING.rose;
+
+                      return (
+                        <div
+                          key={pin.id}
+                          id={`competitor-pin-${pin.id}`}
+                          style={{ left: `${pin.x}%`, top: `${pin.y}%` }}
+                          onClick={(e) => {
+                            e.stopPropagation(); // don't trigger parent click
+                          }}
+                          className="absolute -translate-x-1/2 -translate-y-1/2 z-10 group/pin"
+                        >
+                          {shapeType === "pin" ? (
+                            <div className={`w-7 h-7 ${colorSet.bg} text-white rounded-full border-2 border-white shadow-lg flex items-center justify-center font-black text-xs cursor-pointer hover:scale-110 active:scale-95 transition-all`}>
+                              {i + 1}
+                            </div>
+                          ) : shapeType === "rect" ? (
+                            <div 
+                              style={{ width: `${sizeVal * 3}px`, height: `${sizeVal * 2}px` }}
+                              className={`-translate-x-1/2 -translate-y-1/2 border-2 border-dashed ${colorSet.border} ${colorSet.fill} rounded-lg flex items-center justify-center cursor-pointer transition-all hover:brightness-110`}
+                            >
+                              <span className={`px-1.5 py-0.5 rounded bg-white text-[10px] font-black border ${colorSet.border} ${colorSet.text} shadow-xs`}>
+                                {i + 1}
+                              </span>
+                            </div>
+                          ) : (
+                            <div 
+                              style={{ width: `${sizeVal * 2.5}px`, height: `${sizeVal * 2.5}px` }}
+                              className={`-translate-x-1/2 -translate-y-1/2 border-2 border-dashed ${colorSet.border} ${colorSet.fill} rounded-full flex items-center justify-center cursor-pointer transition-all hover:brightness-110`}
+                            >
+                              <span className={`px-1.5 py-0.5 rounded bg-white text-[10px] font-black border ${colorSet.border} ${colorSet.text} shadow-xs`}>
+                                {i + 1}
+                              </span>
+                            </div>
+                          )}
+
+                          {/* Pin Tooltip text on hover */}
+                          <div className="absolute top-8 left-1/2 -translate-x-1/2 w-48 bg-slate-900/95 backdrop-blur text-white text-[10px] p-2 rounded-lg shadow-xl opacity-0 hover:opacity-100 group-hover/pin:opacity-100 transition duration-200 pointer-events-none z-20 border border-slate-700">
+                            <p className={`font-bold ${colorSet.text} mb-0.5`}>포인트 #{i + 1} ({shapeType === "pin" ? "핀" : shapeType === "rect" ? "사각형" : "원"})</p>
+                            {pin.text}
+                          </div>
                         </div>
-                        {/* Pin Tooltip text on hover */}
-                        <div className="absolute top-8 left-1/2 -translate-x-1/2 w-48 bg-slate-900/95 backdrop-blur text-white text-[10px] p-2 rounded-lg shadow-xl opacity-0 hover:opacity-100 group-hover/pin:opacity-100 transition duration-200 pointer-events-none z-20 border border-slate-700">
-                          <p className="font-bold text-rose-400 mb-0.5">포인트 #{i + 1}</p>
-                          {pin.text}
-                        </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </>
                 ) : (
                   <div className="text-center p-6 text-slate-400">
                     <ImageIcon className="w-12 h-12 stroke-1 mx-auto mb-2 text-slate-500" />
                     <p className="text-xs">경쟁사 이미지가 등록되지 않았습니다.</p>
+                    <p className="text-[10px] text-slate-500 mt-1">파일을 이 영역에 드래그 앤 드롭해서 업로드 하세요.</p>
                   </div>
                 )}
 
@@ -814,7 +1097,7 @@ export default function App() {
                   <div className="absolute inset-0 bg-indigo-900/20 pointer-events-none flex items-start justify-center pt-4">
                     <span className="bg-indigo-600 text-white px-3 py-1.5 rounded-full text-[10px] font-bold shadow-lg animate-pulse flex items-center gap-1">
                       <MapPin className="w-3 h-3" />
-                      비주얼을 클릭하여 핀 코멘트를 놓으세요
+                      비주얼을 클릭하여 핀/도형 영역을 마킹하세요
                     </span>
                   </div>
                 )}
@@ -833,9 +1116,9 @@ export default function App() {
                     }`}
                   >
                     <Plus className="w-3.5 h-3.5" />
-                    <span>{pinMode === "competitor" ? "선택 중..." : "새 핀 어노테이션 추가"}</span>
+                    <span>{pinMode === "competitor" ? "선택 중..." : "새 도형 및 주석 추가"}</span>
                   </button>
-                  <span className="text-[10px] text-slate-500 hidden sm:inline">비주얼 특정 지점을 클레임 지격으로 기록 가능합니다.</span>
+                  <span className="text-[10px] text-slate-500 hidden sm:inline">특정 부분을 마킹하고 텍스트 코멘트를 달아 분석에 연동합니다.</span>
                 </div>
                 
                 {/* Upload Custom Image button */}
@@ -858,18 +1141,81 @@ export default function App() {
 
               {/* Pending pin dialog inside layout */}
               {pendingPinCoords && pinMode === "competitor" && (
-                <div className="mt-4 p-4 bg-indigo-50 border border-indigo-200 rounded-xl space-y-3">
+                <div className="mt-4 p-4 bg-indigo-50 border border-indigo-200 rounded-xl space-y-4">
                   <div className="flex items-center gap-1 text-indigo-800">
                     <MapPin className="w-4 h-4" />
-                    <span className="text-xs font-extrabold">좌표 ({pendingPinCoords.x}%, {pendingPinCoords.y}%) 에 핀 생성</span>
+                    <span className="text-xs font-extrabold">좌표 ({pendingPinCoords.x}%, {pendingPinCoords.y}%) 에 어노테이션 마킹</span>
                   </div>
-                  <textarea
-                    rows={2}
-                    value={activePinText}
-                    onChange={(e) => setActivePinText(e.target.value)}
-                    placeholder="예: '과도한 장식용 타이포그래피로 중요 문자가 보령화됨' 등"
-                    className="w-full bg-white text-xs p-2.5 border border-indigo-200 rounded-lg focus:outline-hidden"
-                  />
+
+                  {/* Config options */}
+                  <div className="grid grid-cols-2 gap-3 pb-2 border-b border-indigo-100">
+                    {/* Shape Selector */}
+                    <div>
+                      <label className="block text-[10px] font-black text-slate-500 mb-1">어노테이션 형태 선택</label>
+                      <div className="grid grid-cols-3 gap-1 bg-slate-200/60 p-0.5 rounded-lg">
+                        {(["pin", "rect", "circle"] as const).map((t) => (
+                          <button
+                            key={t}
+                            onClick={() => setPendingPinType(t)}
+                            className={`py-1 rounded text-[10px] font-bold transition ${
+                              pendingPinType === t ? "bg-white text-indigo-700 shadow-xs" : "text-slate-600 hover:text-slate-800"
+                            }`}
+                          >
+                            {t === "pin" ? "핀" : t === "rect" ? "사각형" : "원"}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Color Selector */}
+                    <div>
+                      <label className="block text-[10px] font-black text-slate-500 mb-1">마킹 테두리 색상</label>
+                      <div className="flex gap-1.5 items-center h-7">
+                        {(["indigo", "emerald", "rose", "amber", "violet"] as const).map((c) => {
+                          const cl = COLOR_MAPPING[c];
+                          return (
+                            <button
+                              key={c}
+                              onClick={() => setPendingPinColor(c)}
+                              className={`w-4 h-4 rounded-full ${cl.bg} transition-all ${
+                                pendingPinColor === c ? "ring-2 ring-offset-2 ring-indigo-600 scale-110" : "opacity-80"
+                              }`}
+                            />
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Size slide for shapes */}
+                  {pendingPinType !== "pin" && (
+                    <div className="space-y-1">
+                      <div className="flex justify-between items-center text-[10px] font-black text-slate-500">
+                        <span>도형 상대 크기 조절 (Percentage Size)</span>
+                        <span>{pendingPinSize}px</span>
+                      </div>
+                      <input 
+                        type="range" 
+                        min="5" 
+                        max="40" 
+                        value={pendingPinSize} 
+                        onChange={(e) => setPendingPinSize(Number(e.target.value))}
+                        className="w-full accent-indigo-600 h-1.5 bg-slate-200 rounded-lg cursor-pointer"
+                      />
+                    </div>
+                  )}
+
+                  <div className="space-y-1">
+                    <label className="block text-[10px] font-black text-slate-500">주석 핵심 설명글 (Text Comment)</label>
+                    <textarea
+                      rows={2}
+                      value={activePinText}
+                      onChange={(e) => setActivePinText(e.target.value)}
+                      placeholder="예: '과도한 장식용 타이포그래피로 중요 문자가 보령화됨' 등"
+                      className="w-full bg-white text-xs p-2.5 border border-indigo-200 rounded-lg focus:outline-hidden"
+                    />
+                  </div>
+
                   <div className="flex justify-end gap-2">
                     <button 
                       onClick={() => setPendingPinCoords(null)}
@@ -879,9 +1225,9 @@ export default function App() {
                     </button>
                     <button 
                       onClick={savePendingPin}
-                      className="px-3.5 py-1.5 bg-indigo-600 text-white rounded-md text-[10px] font-bold"
+                      className="px-3.5 py-1.5 bg-indigo-600 text-white rounded-md text-[10px] font-bold shadow-md shadow-indigo-100"
                     >
-                      확인 후 핀 꽂기
+                      확인 후 마킹 저장
                     </button>
                   </div>
                 </div>
@@ -890,25 +1236,35 @@ export default function App() {
               {/* List of active Pins */}
               {competitorPins.length > 0 && (
                 <div className="mt-4 space-y-2">
-                  <p className="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest">지정한 경쟁사 비주얼 분석 포인트 ({competitorPins.length})</p>
+                  <p className="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest">내가 지정한 핵심 비주얼 분석 포인트 ({competitorPins.length})</p>
                   <div className="grid grid-cols-1 gap-2 max-h-36 overflow-y-auto pr-1">
-                    {competitorPins.map((pin, idx) => (
-                      <div key={pin.id} className="flex items-start justify-between bg-slate-50 border border-slate-100 p-2 rounded-lg text-[11px] gap-2">
-                        <div className="flex gap-2">
-                          <span className="w-5 h-5 shrink-0 bg-rose-100 text-rose-700 rounded-md flex items-center justify-center font-bold">
-                            {idx + 1}
-                          </span>
-                          <span className="text-slate-600 leading-relaxed font-medium">{pin.text}</span>
+                    {competitorPins.map((pin, idx) => {
+                      const mapping = COLOR_MAPPING[pin.color || "rose"] || COLOR_MAPPING.rose;
+                      return (
+                        <div key={pin.id} className="flex items-start justify-between bg-slate-50 border border-slate-100 p-2 rounded-lg text-[11px] gap-2">
+                          <div className="flex gap-2">
+                            <span className={`w-5 h-5 shrink-0 text-white rounded-md flex items-center justify-center font-bold ${mapping.bg} text-[10px]`}>
+                              {idx + 1}
+                            </span>
+                            <div>
+                              <span className="text-slate-600 leading-relaxed font-semibold">
+                                {pin.text} 
+                              </span>
+                              <span className="text-[9px] bg-slate-200 border text-slate-600 font-bold px-1 py-0 rounded ml-1 uppercase">
+                                {pin.type || "pin"}
+                              </span>
+                            </div>
+                          </div>
+                          <button 
+                            onClick={() => deletePin(pin.id, "competitor")}
+                            className="text-slate-400 hover:text-rose-500 transition-colors p-1 shrink-0"
+                            title="핀 삭제"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
                         </div>
-                        <button 
-                          onClick={() => deletePin(pin.id, "competitor")}
-                          className="text-slate-400 hover:text-rose-500 transition-colors p-1"
-                          title="핀 삭제"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
               )}
@@ -1143,11 +1499,173 @@ export default function App() {
                 </div>
               </div>
 
-              {/* SECTION 2: GRAPHICAL METRICS COMPARISON (Design Comparison Scores) */}
+              {/* SECTION 1.5: VISUAL CHARACTERISTICS AUTOMATED ANALYSIS */}
+              {analysisReport.visualCharacteristics && (
+                <div id="module-visual-characteristics">
+                  <h4 className="text-xs font-black tracking-wider text-slate-400 uppercase mb-4 flex items-center gap-1.5 pb-2 border-b">
+                    <Layers className="w-4 h-4 text-slate-400" />
+                    2. 비주얼 주요 특징 분석 (Visual Characteristics)
+                  </h4>
+
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    {/* Left Grid: Palettes and Styles */}
+                    <div className="space-y-6">
+                      
+                      {/* Color Palette Panel */}
+                      <div className="bg-slate-50 border border-slate-200 rounded-2xl p-5 space-y-4">
+                        <h5 className="font-extrabold text-xs text-slate-800 flex items-center gap-1.5">
+                          <span className="w-1.5 h-3.5 bg-indigo-600 rounded-full"></span>
+                          색상 팔레트 및 배색 조합 (Color Palette)
+                        </h5>
+                        
+                        <div className="grid grid-cols-2 gap-4">
+                          {/* Ours */}
+                          <div className="space-y-3">
+                            <span className="text-[10px] font-bold text-indigo-600 uppercase">자사 브랜드 배색</span>
+                            <div className="flex gap-2">
+                              {analysisReport.visualCharacteristics.colorPalette.ourColors.map((color, idx) => (
+                                <div key={idx} className="group relative">
+                                  <div 
+                                    className="w-11 h-11 rounded-xl border border-slate-300 shadow-xs flex items-center justify-center cursor-pointer hover:scale-105 transition-all" 
+                                    style={{ backgroundColor: color.hex }}
+                                  >
+                                    <span className="text-[8px] font-black mix-blend-difference text-white uppercase">{color.hex}</span>
+                                  </div>
+                                  <div className="absolute top-12 left-1/2 -translate-x-1/2 w-48 bg-slate-900 text-white text-[10px] p-2 rounded shadow-xl opacity-0 group-hover:opacity-100 transition pointer-events-none z-30">
+                                    <p className="font-bold text-indigo-400">{color.name}</p>
+                                    <p className="text-[9px] text-slate-300">{color.desc}</p>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                            <div className="space-y-1 pt-1 bg-white p-2 rounded-lg border border-slate-100">
+                              {analysisReport.visualCharacteristics.colorPalette.ourColors.map((color, idx) => (
+                                <div key={idx} className="text-[10px] text-slate-600 leading-normal">
+                                  <b>{color.name}</b>: {color.desc}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+
+                          {/* Competitor */}
+                          <div className="space-y-3">
+                            <span className="text-[10px] font-bold text-rose-600 uppercase">경쟁사 브랜드 배색</span>
+                            <div className="flex gap-2">
+                              {analysisReport.visualCharacteristics.colorPalette.competitorColors.map((color, idx) => (
+                                <div key={idx} className="group relative">
+                                  <div 
+                                    className="w-11 h-11 rounded-xl border border-slate-300 shadow-xs flex items-center justify-center cursor-pointer hover:scale-105 transition-all" 
+                                    style={{ backgroundColor: color.hex }}
+                                  >
+                                    <span className="text-[8px] font-black mix-blend-difference text-white uppercase">{color.hex}</span>
+                                  </div>
+                                  <div className="absolute top-12 left-1/2 -translate-x-1/2 w-48 bg-slate-900 text-white text-[10px] p-2 rounded shadow-xl opacity-0 group-hover:opacity-100 transition pointer-events-none z-30">
+                                    <p className="font-bold text-rose-400">{color.name}</p>
+                                    <p className="text-[9px] text-slate-300">{color.desc}</p>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                            <div className="space-y-1 pt-1 bg-white p-2 rounded-lg border border-slate-100">
+                              {analysisReport.visualCharacteristics.colorPalette.competitorColors.map((color, idx) => (
+                                <div key={idx} className="text-[10px] text-slate-600 leading-normal">
+                                  <b>{color.name}</b>: {color.desc}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Objects & Elements Detector */}
+                      <div className="bg-slate-50 border border-slate-200 rounded-2xl p-5 space-y-3">
+                        <h5 className="font-extrabold text-xs text-slate-800 flex items-center gap-1.5">
+                          <span className="w-1.5 h-3.5 bg-indigo-600 rounded-full"></span>
+                          감지된 그래픽 객체 및 오브젝트 (Objects Detected)
+                        </h5>
+                        <div className="grid grid-cols-2 gap-4">
+                          <div>
+                            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-1.5">자사 식별 요소</span>
+                            <div className="flex flex-wrap gap-1.5">
+                              {analysisReport.visualCharacteristics.objectsAndElements.ourObjects.map((obj, idx) => (
+                                <span key={idx} className="bg-indigo-50 border border-indigo-100 text-indigo-800 text-[10px] font-semibold px-2.5 py-1 rounded-md">
+                                  {obj}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                          <div>
+                            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-1.5">경쟁사 식별 요소</span>
+                            <div className="flex flex-wrap gap-1.5">
+                              {analysisReport.visualCharacteristics.objectsAndElements.competitorObjects.map((obj, idx) => (
+                                <span key={idx} className="bg-slate-100 border border-slate-200 text-slate-700 text-[10px] font-semibold px-2.5 py-1 rounded-md">
+                                  {obj}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                    </div>
+
+                    {/* Right Grid: Styles/Textures and Similarities/Differences Summary */}
+                    <div className="space-y-6">
+                      
+                      {/* Textures and Styles Aspect */}
+                      <div className="bg-slate-50 border border-slate-200 rounded-2xl p-5 space-y-3">
+                        <h5 className="font-extrabold text-xs text-slate-800 flex items-center gap-1.5">
+                          <span className="w-1.5 h-3.5 bg-indigo-600 rounded-full"></span>
+                          표면 재질감 및 양식 비교 (Styles & Textures)
+                        </h5>
+                        <div className="grid grid-cols-2 gap-4 text-xs font-semibold">
+                          <div className="space-y-1.5">
+                            <span className="text-[10px] font-bold text-indigo-600 block border-b pb-1 mb-1">자사 기법</span>
+                            {analysisReport.visualCharacteristics.texturesAndStyles.ourStyles.map((style, idx) => (
+                              <p key={idx} className="text-slate-700 leading-relaxed font-semibold">• {style}</p>
+                            ))}
+                          </div>
+                          <div className="space-y-1.5">
+                            <span className="text-[10px] font-bold text-rose-600 block border-b pb-1 mb-1">경쟁사 기법</span>
+                            {analysisReport.visualCharacteristics.texturesAndStyles.competitorStyles.map((style, idx) => (
+                              <p key={idx} className="text-slate-700 leading-relaxed font-semibold">• {style}</p>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Visual Similarities & Differences */}
+                      <div className="bg-indigo-50/25 border border-indigo-100/70 rounded-2xl p-5 space-y-3">
+                        <h5 className="font-extrabold text-xs text-slate-800 flex items-center gap-1.5">
+                          <span className="w-1.5 h-3.5 bg-indigo-600 rounded-full"></span>
+                          시각적 상호 대조 분석 (Comparison Summary)
+                        </h5>
+                        <div className="space-y-3">
+                          <div className="space-y-1.5 bg-white p-3 rounded-xl border border-slate-100">
+                            <span className="text-[10px] font-extrabold text-indigo-700 uppercase tracking-wider block mb-1">상호 유사점 (Similarities)</span>
+                            {analysisReport.visualCharacteristics.comparisonSummary.similarities.map((item, idx) => (
+                              <p key={idx} className="text-xs text-slate-700 font-semibold leading-relaxed">• {item}</p>
+                            ))}
+                          </div>
+                          <div className="space-y-1.5 bg-white p-3 rounded-xl border border-slate-100">
+                            <span className="text-[10px] font-extrabold text-rose-700 uppercase tracking-wider block mb-1">대치되는 차이점 (Differences)</span>
+                            {analysisReport.visualCharacteristics.comparisonSummary.differences.map((item, idx) => (
+                              <p key={idx} className="text-xs text-slate-700 font-semibold leading-relaxed">• {item}</p>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* SECTION 3: GRAPHICAL METRICS COMPARISON (Design Comparison Scores) */}
               <div id="module-design-comparison">
                 <h4 className="text-xs font-black tracking-wider text-slate-400 uppercase mb-4 flex items-center gap-1.5 pb-2 border-b">
                   <BarChart3 className="w-4 h-4 text-slate-400" />
-                  2. 비주얼 구성 핵심 지표 정량 대조 (Design Scores)
+                  3. 비주얼 구성 핵심 지표 정량 대조 (Design Scores)
                 </h4>
 
                 <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-stretch">
@@ -1277,12 +1795,12 @@ export default function App() {
                 </div>
               </div>
 
-              {/* SECTION 3: COMPREHENSIVE SWOT MATRIX GRID PROGRESSION */}
+              {/* SECTION 4: COMPREHENSIVE SWOT MATRIX GRID PROGRESSION */}
               <div id="module-swot" className="scroll-mt-20">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4 pb-2 border-b">
                   <h4 className="text-xs font-black tracking-wider text-slate-400 uppercase flex items-center gap-1.5">
                     <TrendingUp className="w-4 h-4 text-slate-400" />
-                    3. 자사 vs 경쟁사 세밀 구조화 SWOT 분석 (SWOT Analysis)
+                    4. 자사 vs 경쟁사 세밀 구조화 SWOT 분석 (SWOT Analysis)
                   </h4>
                   
                   {/* SWOT View Tabs */}
@@ -1474,11 +1992,11 @@ export default function App() {
 
               </div>
 
-              {/* SECTION 4: ACTIONABLE RECOMMENDATIONS ORDERED LIST */}
+              {/* SECTION 5: ACTIONABLE RECOMMENDATIONS ORDERED LIST */}
               <div id="module-recommendations">
                 <h4 className="text-xs font-black tracking-wider text-slate-400 uppercase mb-4 flex items-center gap-1.5 pb-2 border-b">
                   <FileText className="w-4 h-4 text-slate-400" />
-                  4. 자사를 위한 우선 전략 실행 권장 사항 (Strategic Actions)
+                  5. 자사를 위한 우선 전략 실행 권장 사항 (Strategic Actions)
                 </h4>
 
                 <div className="space-y-4">
